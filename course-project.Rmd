@@ -13,6 +13,8 @@ output:
 
 This report investigates the relationship between manual / automatic transmission and fuel consumption. Based on `mtcars` dataset, we determine that fuel consumption is primarily influenced by car weight and number of cylinders (both factors having negative influence). It appears that transmission type does not have an impact alone once these factors are considered. However, we found a weak relationship once weight is considered. Based on our results, cars with weight below 2,666 lbs have lower fuel consumption if manual transmission is used, whereas heavier cars see an opposite effect.
 
+__Note: The underlying R code for analysis in this report can be found on [Github](https://github.com/kamicollo/regression-models/blob/master/course-project.Rmd)__
+
 #Understanding the data
 
 The `mtcars` dataset includes 11 variables: `mpg` (fuel consumption in miles per gallon), `cyl` (number of cylinders), `disp` (displacement -  volume of an engine's cylinders), `hp` (gross horsepower), `drat` (rear axie ratio), `wt` (weight expressed as lb/1000), `qsec` (time to reach 1/4 mile), `vs` (V/S), `am` (transmission (1 = manual)), `gear` (number of forward gears) and `carb` (number or carburetors).
