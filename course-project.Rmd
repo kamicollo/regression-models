@@ -1,0 +1,256 @@
+---
+title: "Factors influencing fuel consumption in cars"
+author: "Aurimas R."
+date: "01/24/2015"
+output:
+  html_document:
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: default
+---
+
+#Executive summary
+
+This report investigates the relationship between manual / automatic transmission and fuel consumption. Based on `mtcars` dataset, we determine that fuel consumption is primarily influenced by car weight and number of cylinders (both factors having negative influence). It appears that transmission type does not have an impact alone once these factors are considered. However, we found a weak relationship once weight is considered. Based on our results, cars with weight below 2,666 lbs have lower fuel consumption if manual transmission is used, whereas heavier cars see an opposite effect.
+
+#Understanding the data
+
+The `mtcars` dataset includes 11 variables: `mpg` (fuel consumption in miles per gallon), `cyl` (number of cylinders), `disp` (displacement -  volume of an engine's cylinders), `hp` (gross horsepower), `drat` (rear axie ratio), `wt` (weight expressed as lb/1000), `qsec` (time to reach 1/4 mile), `vs` (V/S), `am` (transmission (1 = manual)), `gear` (number of forward gears) and `carb` (number or carburetors).
+
+As the focus of this report is to understand the relationship between fuel consumption and transmission type, let's look at a few charts to understand what relationships could be prevalent (see appendix 1).
+
+```{r echo=FALSE}
+#Initialization
+data(mtcars)
+library(ggplot2)
+library(grid)
+
+#Let's clean up the transmission variable - convert into factor & add labels
+mtcars$am <- factor(mtcars$am, levels=c(0,1), labels=c("automatic", "manual"))
+#let's also convert the cylinder and gear variables into factors
+mtcars$cyl <- factor(mtcars$cyl)
+mtcars$gear <- factor(mtcars$gear)
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  require(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+
+It appears that fuel consumption indeed differs depending on transmission type (manual transmissions appear to have higher mpg), yet fuel consumption also appears to be related to weight, displacement and horsepower, and this should be taken into account. 
+
+#Investigating factors influencing mpg
+## Direct relationship between fuel consumption and transmission type
+
+```{r echo=FALSE}
+t <- t.test(mpg ~ am, data=mtcars)
+```
+
+Let's first see if the means of mpg are different in the subsets of data split by transmission type. We applied Welsh test for two-sample differences (see output in appendix 2). The p-value is well below 5%, thus we giving indications that the means are different. As can be seen above, automatic transmission group has lower (worse) mpg, indicating higher fuel consumption. In particular, the difference between the two groups is `r t$estimate[[2]] - t$estimate[[1]]`. However, this test is very simplistic. It assumes that we are missing no other important variables, which is definitely not the case. We will now investigate the impact of transmission type holding other factors constant.
+
+##Model selection
+###Determining independent variables
+
+```{r echo=FALSE}
+fit <- lm(mpg ~ wt + hp + disp + am, data=mtcars)
+orig_fit <- fit
+```
+
+First, we will explore the relationship once the 3 additional variables considered above are included (horsepower, cylinder volume and weight). Formula: ``r format(formula(fit))``. The regression output (appendix 3) indicates that transmission type does not have a significant impact on fuel consumption once other factors are taken into account (p-value > 0.5%). In particular, only weight and horsepower appear to explain the variation in fuel consumption (both have a negative impact).
+
+```{r echo=FALSE}
+set.seed(2)
+variables <- sample(c("hp", "cyl", "disp", "drat", "wt", "qsec", "vs", "gear", "carb"))
+fit <- lm(as.formula(paste("mpg ~", variables[1])), data=mtcars)
+a <- sapply(variables[0:-1], FUN = function(v) {
+    nf <- paste(". ~ . + ", v)
+    of <- format(formula(fit))
+    fit2 <- update(fit, as.formula(nf))
+    a <- anova(fit, fit2)
+    p <- a[6][2,1]
+    if (!is.null(p) && p < 0.05) {
+        fit <<- fit2
+    }
+    paste("Model ", of, " vs ", format(formula(fit2)), "- anova p-value: ", round(p,3))
+})
+```
+
+To ensure that our visual analysis did miss out anything, we also tested if other models (including more variables from the dataset) perform better. The analysis was performed by randomising the order of independent variables, adding them one-by-one, and testing if the fit improved using `anova` test (without considering interaction terms, see appendix 4 for output of analysis).  The best model obtained was as follows: ``r format(formula(fit)) ``
+
+```{r echo=FALSE}
+round(summary(fit)$coefficients, 3)
+```
+
+The model's explanatory power (adjusted r-squared) is `r round(summary(fit)$adj.r.squared * 100, 1)`%. The model tells us that weight and increase in cylinder number both affect fuel consumption negatively. Note that the cylinder variable was converted to a factor as it only takes 3 values. The `cyl6` and `cyl8` coefficients should thus be interpreted as "change in mpg by changing cylinder number from 4 to (6 or 8), holding vehicle weight constant".
+
+### Impact of transmission type
+
+```{r echo=FALSE}
+fit_new <- update(fit,as.formula(paste(". ~ .", "+ am*.")))
+```
+
+Let's now include transmission type into equation, also considering interaction terms: ``r format(formula(fit_new)) ``. The results (presented in Appendix 5) should be interpreted as follows:
+
+ - At 5% significance level, factors `cyl8` (8-cylinders), `wt` (weight), `ammanual` (manual transmission) and interaction `wt:ammanual` (impact of a unit change in weight and to a manual transmission type) are statistically significant to fuel consumption level.
+ - Weight and inclusion of 8 cylinders have a negative impact to fuel consumption (reducing expected mileage by 2.3 miles for each 1000 lbs added and 5.2 miles if 4-cylinders are changed to 8-cylinders), holding other factors constant
+ - Holding other factors constant, manual transmission improves mileage by 13.6 miles, less 5.1 miles for each 1000 lbs. In other words, the impact of manual transmission has a positive impact on fuel consumption if car weight is less than 2,666lbs (9 cars in the dataset), but negative impact otherwise (23 cars in the dataset). 
+ - Note that the statistical power of the two terms terms related to transmission type is not very strong. At 1% significance level, both of them would not be different from zero.
+
+#Robustness of models selected
+
+```{r echo=FALSE}
+anova <- anova(fit, fit_new)
+p <- anova[6][2,1]
+```
+
+To ensure the robustness of the model, the following analysis was performed:
+ 
+ - QQ plot of residuals was analysed to see their distribution is similar to normal (see appendix 6)
+ - Plots of residuals against independent variables were analysed to see any patters (see appendix 6).
+
+The above analysis indicated that the model appears to be quite robust. However, due to limited sample size (32 cars), this analysis may be not fully representative of the overall car population.
+
+#Appendices
+
+##Appendix 1: Fuel consumption and other variables
+
+```{r echo=FALSE, fig.height=9}
+#chart of mpg histogram by transmission type
+chart1 <- ggplot(mtcars, aes(x=mpg, fill=am)) + geom_histogram(binwidth=0.5, alpha=0.5) +
+    xlab("Fuel consumption (Miles per Gallon)") + ylab("# of obs") + 
+    guides(fill=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart1 <- ggplot(mtcars, aes(x=mpg, fill=am)) + geom_histogram(binwidth=0.5, alpha=0.5) +
+    xlab("Fuel consumption (Miles per Gallon)") + ylab("# of obs") + 
+    guides(fill=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart2 <- ggplot(mtcars, aes(x=disp, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("Displacement (Cylinder volume)") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart3 <- ggplot(mtcars, aes(x=wt, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("Weight (lb / 1000)") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart4 <- ggplot(mtcars, aes(x=hp, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("Gross horsepower") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart5 <- ggplot(mtcars, aes(x=cyl, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("# Cylinders") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart6 <- ggplot(mtcars, aes(x=drat, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("Rear axie ratio") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart7 <- ggplot(mtcars, aes(x=qsec, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("1/4 mile time") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart8 <- ggplot(mtcars, aes(x=vs, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("V/S") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart9 <- ggplot(mtcars, aes(x=gear, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("# of forward gears") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+chart10 <- ggplot(mtcars, aes(x=carb, y=mpg, colour=am)) +geom_point(shape=5) +
+    xlab("# Carburetors") + ylab("mpg") + 
+    guides(colour=guide_legend(title=NULL)) + theme_set(theme_gray(base_size=8))
+
+multiplot(chart1, chart2, chart3, chart4, chart5, chart6, chart7, chart8, chart9, chart10, cols=2)
+
+```
+
+\newpage
+
+##Appendix 2: Welsh t-test
+
+```{r echo=FALSE}
+t
+```
+
+##Appendix 3: Simple regression model
+
+```{r echo=FALSE}
+summary(orig_fit)
+```
+
+##Appendix 4: Anova model selection results
+
+```{r echo=FALSE}
+bb <- sapply(a, function(a) { print (a)})
+```
+
+\newpage
+
+##Appendix 5: Final model results
+```{r echo=FALSE}
+summary(fit_new)
+```
+
+##Appendix 6: Residual variation
+```{r echo =FALSE, out.height='280px'}
+
+c0 <- ggplot(data.frame(resid(fit_new)), aes(sample= resid.fit_new.)) +
+    stat_qq(color="red", alpha=1) +
+    geom_abline(intercept=mean(resid(fit_new)), slope=sd(resid(fit_new)), colour="blue") +
+    ggtitle("QQ plot of average sample means") + 
+    theme_set(theme_gray(base_size=8))
+
+c1 <- qplot(x=mtcars$wt, y=resid(fit_new)) + ylab("residuals") + xlab("weight") +
+    ggtitle("Residuals vs weight") + theme_set(theme_gray(base_size=8))
+
+c2 <- qplot(x=mtcars$cyl, y=resid(fit_new)) +
+    ylab("residuals") + xlab("cylinders") + 
+    ggtitle("Residuals vs cylinders") +
+    theme_set(theme_gray(base_size=8)) 
+
+c3 <- qplot(x=mtcars$am, y=resid(fit_new)) + 
+    ggtitle("Residuals vs transmission type") + ylab("residuals") + xlab("transmission type") +
+    theme_set(theme_gray(base_size=8))
+
+c4 <- qplot(x=mtcars$hp, y=resid(fit_new)) + 
+    ggtitle("Residuals vs Horsepower") +
+    ylab("residuals") + xlab("Horespower") + theme_set(theme_gray(base_size=8))
+
+c5 <- qplot(x=mtcars$vs, y=resid(fit_new)) + 
+    ggtitle("Residuals vs V/S") + ylab("residuals") + xlab("V/S") +
+    theme_set(theme_gray(base_size=8))
+
+multiplot(c0, c1, c2, c3, c4, c5, cols=3)
+```
